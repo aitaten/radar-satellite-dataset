@@ -1,0 +1,12 @@
+name: euradclim_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - requests
+  - h5py
+  - numpy
+  - pyproj
+  - matplotlib
+  - cartopy
+  - urllib3
