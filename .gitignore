@@ -1,0 +1,5 @@
+secret_API.json
+tmp_data/
+output/
+__pycache__/
+.DS_Store
