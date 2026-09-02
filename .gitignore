@@ -1,5 +1,7 @@
 secret_API.json
 tmp_data/
+tmp_opera/
 output/
 __pycache__/
 .DS_Store
+.vscode/
