@@ -1,97 +1,217 @@
-# EURADCLIM v3 Reader & Visualization Pipeline
+# Meteorological Data Reader & Visualization Pipeline
 
-A Python pipeline to download, parse, and visualize (_for now_) the **EURADCLIM v3** European climatological gauge-adjusted radar precipitation dataset provided by the **KNMI Data Platform**.
+A small, modular Python application/project for reading and visualising several meteorological data sources.
 
-## Key Features
+The project currently covers:
 
-- **Rate-limit Protection:** Employs exponential backoff with retries on HTTP 429 errors.
-- **Session Header Isolation:** Uses separate HTTP sessions for KNMI API queries (authenticated) and AWS S3 downloads (unauthenticated presigned URLs).
-- **Native Projection Rendering:** Plots directly in Lambert Azimuthal Equal Area (LAEA) projection without spatial resampling or warping artifacts.
-- **Data Categorization:** Uses discrete color boundaries (`BoundaryNorm`) to clearly separate:
-  - $0.0\text{ mm/h}$ (Dry / No Rain) $\rightarrow$ **White**
-  - $\text{NaN}$ (Missing / Out-of-Domain) $\rightarrow$ **Dark Grey**
-  - $> 0.1\text{ mm/h}$ (Rain) $\rightarrow$ **Turbo Spectrum**
+- **EUMETNET OPERA** near-real-time radar composites from MeteoGate.
+- **EURADCLIM v3** hourly rainfall fields from the KNMI Data Platform.
+- **E-SOH** surface weather observations through the public OGC API - EDR service.
 
----
+A future satellite reader can be added as another data-source module without changing the map plotting layer.
 
-## Configuration & Credentials (`secret_API.json`)
+## Why this structure?
 
-To run this pipeline, you need an API key from the **KNMI Data Platform**.
+The repository is intentionally a **modular application**, not a large generic framework. The readers know how to acquire and decode their own source data. Plotting only knows about generic geospatial products such as a raster field or station observations.
 
-Create a file named `secret_API.json` in the root directory:
+That keeps the call chain simple:
+
+```text
+source/API/file -> reader -> small data object -> plotting function -> output figure
+```
+
+There is deliberately no `BaseReader`, factory hierarchy, plugin system, or other abstraction until the project actually needs one.
+
+## Repository layout
+
+```text
+radar-satellite-dataset/
+├── README.md
+├── pyproject.toml
+├── environment.yml
+├── .gitignore
+│
+├── src/
+│   └── weather_data/
+│       ├── __init__.py
+│       ├── config.py
+│       ├── covjson.py
+│       ├── esoh.py
+│       ├── euradclim.py
+│       ├── http.py
+│       ├── models.py
+│       ├── opera.py
+│       ├── plotting.py
+│       └── spatial.py
+│
+├── scripts/
+│   ├── plot_esoh.py
+│   ├── plot_euradclim.py
+│   └── plot_opera.py
+│
+├── cache/
+└── output/
+```
+
+`cache/` is for downloaded/raw local data and API cache files. `output/` is for generated figures. Both are ignored by Git.
+
+## Installation
+
+### Conda/Mamba
+
+```bash
+mamba env create -f environment.yml
+mamba activate meteorological_data_env
+```
+
+### pip / uv
+
+Create a virtual environment with Python 3.10+ and install the project in editable mode:
+
+```bash
+python -m pip install -e .
+```
+
+or:
+
+```bash
+uv pip install -e .
+```
+
+## KNMI credentials for EURADCLIM
+
+EURADCLIM uses the KNMI Data Platform API. Provide the key either as an environment variable:
+
+```bash
+export KNMI_API_KEY="your-key"
+```
+
+or create `secret_API.json` in the repository root:
 
 ```json
 {
-    "API_KEY": "YOUR_ACTUAL_KNMI_API_KEY_HERE"
+  "API_KEY": "your-key"
 }
-
 ```
 
-> **Security Note:** `secret_API.json` is listed in `.gitignore` and will **never** be committed or pushed to remote repositories.
+`secret_API.json` is ignored by Git and should never be committed.
 
----
+## Running the programs
 
-## Installation & Environment Setup
+### OPERA
 
-You can set up the environment using either **Mamba** (Recommended for geospatial C-bindings) or **`uv`**.
-
-### Option A: Mamba (Recommended)
-
-1. Ensure [Miniforge/Mamba](https://github.com/conda-forge/miniforge) is installed.
-2. Create and activate the environment using `environment.yml`:
+Fetch the latest available product and plot it:
 
 ```bash
-# Create environment
-mamba env create -f environment.yml
-
-# Activate environment
-mamba activate euradclim_env
-
+python scripts/plot_opera.py                 # original RATE + matching DBZH workflow
+python scripts/plot_opera.py --product RATE
+python scripts/plot_opera.py --product DBZH
 ```
 
----
+### EURADCLIM v3
 
-### Option B: `uv`
-
-If you prefer using [`uv`](https://github.com/astral-sh/uv):
+Compare specific hourly timestamps:
 
 ```bash
-# Create a virtual environment with Python 3.10
-uv venv .venv --python 3.10
-
-# Activate the virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
-
-# On Windows (Command Prompt / Git Bash):
-.venv\Scripts\activate
-
-# On Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-
-# Install dependencies from pyproject.toml
-uv pip install -r pyproject.toml
+python scripts/plot_euradclim.py \
+    2018-07-14T12:00 \
+    2021-07-14T12:00
 ```
 
-**Note:** You can also run scripts directly without manually activating the environment first using `uv run`:
+### E-SOH
+
+Plot station observations for a parameter over the last 30 minutes across the default European bounding box:
 
 ```bash
-uv run python read_v3_euradclim.py
+python scripts/plot_esoh.py air_temperature
+python scripts/plot_esoh.py precipitation_amount
+python scripts/plot_esoh.py wind_speed
 ```
 
----
+The public E-SOH service is used through its OGC API - EDR endpoints. The client exposes metadata, locations, area, position, and single-location retrieval so application code can use the observations without involving plotting.
 
-## Usage
+## Using the modules from another program
 
-Run the main processing script:
+The main benefit of the reorganisation is that another Python program can import the readers directly rather than launching these scripts.
 
-```bash
-python read_v3_euradclim.py
+```python
+import datetime as dt
 
+from weather_data.opera import MeteoGateDownloader, OPERADataReader
+from weather_data.plotting import plot_raster
+
+when = dt.datetime.now(dt.timezone.utc)
+downloader = MeteoGateDownloader()
+path, timestamp = downloader.fetch_latest_available("RATE")
+field = OPERADataReader.read_composite(path)
+plot_raster(field, "output/rate.png", title=f"OPERA RATE | {timestamp:%Y-%m-%d %H:%M UTC}")
 ```
 
-### Execution Output:
+Likewise, an application can query E-SOH without generating a figure:
 
-1. **Directory Caching:** Raw dataset packages are downloaded to `./tmp_data/`.
-2. **Data Processing:** Extracts hourly precipitation fields and transforms LAEA grid metrics directly.
-3. **Visualization:** Generates side-by-side comparative plots saved to `./output/v3_native_comparison.png`.
+```python
+import datetime as dt
+
+from weather_data.esoh import ESoHClient
+
+client = ESoHClient()
+end = dt.datetime.now(dt.timezone.utc)
+observations = client.observation_records(
+    start=end - dt.timedelta(minutes=30),
+    end=end,
+    parameters=["air_temperature"],
+    bbox=(-12, 34, 32, 72),
+)
+records = observations.as_records()
+```
+
+## Design decisions
+
+### 1. Readers are independent
+
+`opera.py`, `euradclim.py`, and `esoh.py` each contain source-specific API/download/parsing logic. They do not know how another source works.
+
+### 2. Plotting is source-independent
+
+`plotting.py` provides generic functions for:
+
+- native-grid raster maps (`plot_raster`),
+- side-by-side raster comparisons (`plot_raster_comparison`),
+- station-value scatter maps (`plot_station_observations`).
+
+This is the part intended to make a later satellite reader easy to add. A satellite raster reader should return the same simple `RasterField` concept whenever its native grid can be represented that way.
+
+### 3. Raster and station data stay different
+
+OPERA and EURADCLIM are gridded raster products. E-SOH is station observations. The project therefore does **not** force them into one universal dataframe/model merely for the sake of abstraction.
+
+### 4. Scripts are thin
+
+The files in `scripts/` are command-line entry points and demonstrations. They should remain small. Reusable functionality belongs in `src/weather_data/`.
+
+## Existing EURADCLIM behaviour retained
+
+The original EURADCLIM program downloaded monthly ZIP packages, cached them locally, extracted HDF5 files, read the native LAEA grid, preserved `0.0` rainfall separately from missing data, and produced a native-projection comparison figure. That behaviour is now distributed across `EURADCLIMClient` and the generic raster plotting functions rather than being embedded in one long script.
+
+## Sources / API documentation
+
+The E-SOH reader is based on the public E-SOH / MeteoGate OGC API - EDR service described in the EUMETNET E-SOH documentation. The main public service is:
+
+`https://observations.meteogate.eu/`
+
+The API documentation is available from its `/docs` endpoint.
+
+## Notes for future satellite integration
+
+When the satellite reader is added, prefer this sequence:
+
+```text
+satellite.py
+    -> download/open satellite product
+    -> return RasterField (or another small source-specific object)
+
+plotting.py
+    -> plot_raster(...)
+```
+
+If the satellite product is swath-based, vector-based, or otherwise not naturally representable by `RasterField`, add a small dedicated model/plot function rather than making `RasterField` contain every possible geospatial case.

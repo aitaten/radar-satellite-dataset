@@ -1,7 +1,22 @@
+# Secrets
 secret_API.json
-tmp_data/
-tmp_opera/
+.env
+
+# Local caches / downloaded data
+cache/
+*.h5
+*.zip
+
+# Generated figures
 output/
+
+# Python
 __pycache__/
-.DS_Store
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Editors / OS
 .vscode/
+.idea/
+.DS_Store

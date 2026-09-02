@@ -3,17 +3,25 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "euradclim-reader"
-version = "0.3.0"
-description = "EURADCLIM v3 reader script and API config"
+name = "meteorological-data-tools"
+version = "0.4.0"
+description = "Modular readers and Cartopy plotting tools for meteorological observation and gridded datasets"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "requests",
-    "h5py",
-    "numpy",
-    "pyproj",
-    "matplotlib",
-    "cartopy",
-    "urllib3",
+    "requests>=2.31",
+    "urllib3>=2.0",
+    "numpy>=1.24",
+    "h5py>=3.9",
+    "pyproj>=3.5",
+    "matplotlib>=3.7",
+    "cartopy>=0.22",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+plot-opera = "weather_data.cli:plot_opera"
+plot-euradclim = "weather_data.cli:plot_euradclim"
+plot-esoh = "weather_data.cli:plot_esoh"
