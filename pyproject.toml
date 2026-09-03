@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "euradclim-reader"
+version = "0.3.0"
+description = "EURADCLIM v3 reader script and API config"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "h5py",
+    "numpy",
+    "pyproj",
+    "matplotlib",
+    "cartopy",
+    "urllib3",
+]

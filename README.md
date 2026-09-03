@@ -3,6 +3,7 @@
 A Python pipeline to download, parse, and visualize (_for now_) the **EURADCLIM v3** European climatological gauge-adjusted radar precipitation dataset provided by the **KNMI Data Platform**.
 
 ## Key Features
+
 - **Rate-limit Protection:** Employs exponential backoff with retries on HTTP 429 errors.
 - **Session Header Isolation:** Uses separate HTTP sessions for KNMI API queries (authenticated) and AWS S3 downloads (unauthenticated presigned URLs).
 - **Native Projection Rendering:** Plots directly in Lambert Azimuthal Equal Area (LAEA) projection without spatial resampling or warping artifacts.
@@ -61,12 +62,21 @@ uv venv .venv --python 3.10
 # Activate the virtual environment
 # On macOS/Linux:
 source .venv/bin/activate
-# On Windows:
-# .venv\Scripts\activate
 
-# Sync/install dependencies from pyproject.toml
-uv pip install -e .
+# On Windows (Command Prompt / Git Bash):
+.venv\Scripts\activate
 
+# On Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+
+# Install dependencies from pyproject.toml
+uv pip install -r pyproject.toml
+```
+
+**Note:** You can also run scripts directly without manually activating the environment first using `uv run`:
+
+```bash
+uv run python read_v3_euradclim.py
 ```
 
 ---
