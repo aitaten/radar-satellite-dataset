@@ -3,5 +3,6 @@ tmp_data/
 tmp_opera/
 output/
 __pycache__/
+.DS_Store.ipynb_checkpoints/
 .DS_Store
 .vscode/
