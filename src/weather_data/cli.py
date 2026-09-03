@@ -55,19 +55,45 @@ def plot_euradclim() -> None:
     plot_raster_comparison(fields, titles, output, suptitle="EURADCLIM v3 Comparison")
     print(f"Saved: {output}")
 
+def parse_utc_datetime(value: str) -> dt.datetime:
+    """Helper to parse ISO-formatted datetime strings into UTC-aware datetimes."""
+    parsed = dt.datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        # Assume UTC if no timezone offset is explicitly provided
+        return parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
 
 def plot_esoh() -> None:
     parser = argparse.ArgumentParser(description="Query E-SOH station observations and plot them.")
     parser.add_argument("parameter", help="E-SOH/CF parameter name")
-    parser.add_argument("--hours", type=float, default=0.5)
+    parser.add_argument("--hours", type=float, default=None, help="Time window duration in hours")
+    parser.add_argument("--start", type=parse_utc_datetime, default=None, help="Start time in ISO format")
+    parser.add_argument("--end", type=parse_utc_datetime, default=None, help="End time in ISO format")
     parser.add_argument("--bbox", nargs=4, type=float, default=ESoHQueryConfig().bbox, metavar=("W", "S", "E", "N"))
     parser.add_argument("--output", default=None)
     args = parser.parse_args()
 
+    # --- Robust Date Resolution ---
+    # 1. Start with the explicitly passed hours or default to 0.5
+    hours = args.hours if args.hours is not None else 0.5
+    delta = dt.timedelta(hours=hours)
+
+    # 2. Derive start/end based on what was explicitly passed
+    if args.start and args.end:
+        start, end = args.start, args.end
+    elif args.start:
+        start = args.start
+        end = start + delta
+    elif args.end:
+        end = args.end
+        start = end - delta
+    else:
+        end = dt.datetime.now(dt.timezone.utc)
+        start = end - delta
+
     directories = DirectoryConfig()
     directories.ensure()
-    end = dt.datetime.now(dt.timezone.utc)
-    start = end - dt.timedelta(hours=args.hours)
+    
     observations = ESoHClient().observation_records(start=start, end=end, parameters=[args.parameter], bbox=tuple(args.bbox))
     output = Path(args.output) if args.output else directories.output / f"esoh_{args.parameter}.png"
     plot_station_observations(observations.as_records(), output, title=f"E-SOH | {args.parameter} | {end:%Y-%m-%d %H:%M UTC}", value_label=args.parameter)

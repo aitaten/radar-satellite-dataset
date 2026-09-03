@@ -41,6 +41,13 @@ class ESoHClient:
                 return json.loads(cache_file.read_text(encoding="utf-8"))
 
         response = self.session.get(f"{self.base_url}{path}", params=params, timeout=self.timeout)
+        print("\n--- E-SOH request ---")
+        print("URL:", response.url)
+        print("Status:", response.status_code)
+
+        if not response.ok:
+            print("Response:", response.text)
+
         response.raise_for_status()
         data = response.json()
         if cache_name:
@@ -59,7 +66,13 @@ class ESoHClient:
 
     def area(self, bbox: tuple[float, float, float, float], params: dict[str, Any]) -> dict[str, Any]:
         query = dict(params)
-        query["bbox"] = ",".join(map(str, bbox))
+        query["coords"] = (
+            f"POLYGON(({bbox[0]} {bbox[1]},"
+            f"{bbox[2]} {bbox[1]},"
+            f"{bbox[2]} {bbox[3]},"
+            f"{bbox[0]} {bbox[3]},"
+            f"{bbox[0]} {bbox[1]}))"
+        )
         return self._get_json("/collections/observations/area", params=query)
 
     def position(self, lon: float, lat: float, params: dict[str, Any]) -> dict[str, Any]:
@@ -79,7 +92,7 @@ class ESoHClient:
     ) -> StationObservations:
         params: dict[str, Any] = {
             "datetime": f"{start.astimezone(dt.timezone.utc).isoformat()}/{end.astimezone(dt.timezone.utc).isoformat()}",
-            "parameter-name": ",".join(parameters),
+            "parameter-name": ",".join(f"{parameter}:*:*:*" for parameter in parameters),
             "f": "CoverageJSON",
         }
         if level:

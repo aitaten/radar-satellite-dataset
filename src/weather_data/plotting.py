@@ -30,16 +30,18 @@ def add_map_features(ax, config: MapConfig = MapConfig()) -> None:
 
 def _raster_style(quantity: str):
     if quantity in {"DBZH", "DBZ"}:
-        bounds = [-10, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
+        # bounds = [-10, 0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
+        bounds = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
         cmap = plt.get_cmap("turbo").copy()
+        cmap.set_under(color="purple", alpha=0.5)
         cmap.set_bad(color="none")
         return colors.BoundaryNorm(bounds, ncolors=cmap.N), cmap
     if quantity in {"RATE", "precipitation"}:
-        bounds = [0.0, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 50.0, 100.0]
-        cmap = plt.get_cmap("viridis").copy()
+        bounds = [0.01, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 50.0, 100.0]
+        cmap = plt.get_cmap("YlGnBu").copy()
         cmap.set_under(color="white")
         cmap.set_bad(color="dimgrey", alpha=0.5)
-        return colors.BoundaryNorm(bounds, ncolors=cmap.N), cmap
+        return colors.BoundaryNorm(bounds, ncolors=cmap.N, extend="max"), cmap
     bounds = np.linspace(0, 100, 10)
     cmap = plt.get_cmap("Blues").copy()
     cmap.set_bad(color="none")
@@ -128,17 +130,70 @@ def plot_station_observations(
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(1, 1, 1, projection=projection)
     values = np.asarray([float(r["value"]) for r in rows])
-    scatter = ax.scatter(
-        [r["longitude"] for r in rows],
-        [r["latitude"] for r in rows],
-        c=values,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        s=35,
-        transform=transform,
-        zorder=3,
-    )
+    # Precipitation uses the same classification as the raster plots.
+    is_precipitation = value_label.lower() in {"precipitation", "precipitation_amount", "precipitation_rate", "rate"}
+
+    if is_precipitation:
+        bounds = [0.01, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 50.0, 100.0]
+        cmap_obj = plt.get_cmap("YlGnBu").copy()
+        cmap_obj.set_under(color="white")
+        cmap_obj.set_bad(color="dimgrey", alpha=0.7)
+
+        norm = colors.BoundaryNorm(bounds, ncolors=cmap_obj.N, extend="max")
+
+        normal = np.ma.masked_where((values > 100) | np.isnan(values), values)
+        scatter = ax.scatter(
+            [r["longitude"] for r in rows],
+            [r["latitude"] for r in rows],
+            c=normal,
+            cmap=cmap_obj,
+            norm=norm,
+            s=35,
+            edgecolors="lightgrey",  # Soft grey outline around each point
+            linewidths=0.6,         # Thin stroke so white centers stay distinct
+            transform=transform,
+            zorder=3,
+        )
+
+        # Extreme precipitation: red + actual value.
+        extreme = np.isfinite(values) & (values > 100)
+        if np.any(extreme):
+            extreme_rows = [r for r, flag in zip(rows, extreme) if flag]
+            extreme_values = values[extreme]
+
+            ax.scatter(
+                [r["longitude"] for r in extreme_rows],
+                [r["latitude"] for r in extreme_rows],
+                c="red",
+                s=15,
+                transform=transform,
+                zorder=4,
+                alpha=0.4
+            )
+
+            for r, value in zip(extreme_rows, extreme_values):
+                ax.annotate(
+                    f"{value:g}",
+                    (r["longitude"], r["latitude"]),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color="red",
+                    transform=transform,
+                    zorder=5,
+                )
+    else:
+        scatter = ax.scatter(
+            [r["longitude"] for r in rows],
+            [r["latitude"] for r in rows],
+            c=values,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            s=35,
+            transform=transform,
+            zorder=3,
+        )
     add_map_features(ax)
     fig.colorbar(scatter, ax=ax, label=value_label, pad=0.02, shrink=0.85)
 

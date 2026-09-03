@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from itertools import product
 from typing import Any
-
+import numpy as np
 
 def _as_datetime(value: Any) -> datetime | Any:
     if isinstance(value, str):
@@ -26,6 +26,15 @@ def coveragejson_to_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     The common E-SOH station case is a time series at a fixed point, but this
     also handles simple multi-axis ranges by expanding their flattened values.
     """
+
+    # E-SOH area queries return a CoverageCollection.
+    coverages = payload.get("coverages")
+    if coverages is not None:
+        observations: list[dict[str, Any]] = []
+        for coverage in coverages:
+            if isinstance(coverage, Mapping):
+                observations.extend(coveragejson_to_records(coverage))
+        return observations
 
     domain = payload.get("domain", {})
     axes = domain.get("axes", {})
@@ -74,7 +83,11 @@ def coveragejson_to_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
         # map it directly. This is the normal station time-series case.
         if len(shape) == 1 and shape[0] == len(values):
             for i, value in enumerate(values):
-                record: dict[str, Any] = {"parameter": parameter_name, "value": value}
+                if parameter_name.startswith("precipitation_amount"):
+                    clean_value = np.nan if isinstance(value, (int, float)) and value < 0 else value
+                else:
+                    clean_value = value
+                record: dict[str, Any] = {"parameter": parameter_name, "value": clean_value}
                 if axis_names:
                     axis_name = axis_names[0]
                     _attach_axis_value(record, axis_name, i, times, xs, ys)
@@ -91,7 +104,12 @@ def coveragejson_to_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
         for flat_index, combo in enumerate(product(*index_shape)):
             if flat_index >= len(values):
                 break
-            record = {"parameter": parameter_name, "value": values[flat_index]}
+            value = values[flat_index]
+            if parameter_name.startswith("precipitation_amount"):
+                clean_value = np.nan if isinstance(value, (int, float)) and value < 0 else value
+            else:
+                clean_value = value
+            record = {"parameter": parameter_name, "value": clean_value}
             for axis_name, index in zip(axis_names, combo):
                 _attach_axis_value(record, axis_name, index, times, xs, ys)
             observations.append(record)
