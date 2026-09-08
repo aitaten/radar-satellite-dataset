@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -80,6 +81,35 @@ class ESoHClient:
         query["coords"] = f"POINT({lon} {lat})"
         return self._get_json("/collections/observations/position", params=query)
 
+    #def observation_records(
+        #self,
+        #*,
+        #start: dt.datetime,
+        #end: dt.datetime,
+        #parameters: list[str],
+        #bbox: tuple[float, float, float, float] | None = None,
+        #location_id: str | None = None,
+        #level: str | None = None,
+    #) -> StationObservations:
+        #params: dict[str, Any] = {
+            #"datetime": f"{start.astimezone(dt.timezone.utc).isoformat()}/{end.astimezone(dt.timezone.utc).isoformat()}",
+            #"parameter-name": ",".join(f"{parameter}:*:*:*" for parameter in parameters),
+            #"f": "CoverageJSON",
+        #}
+        #if level:
+            #params["level"] = level
+
+        #if location_id:
+            #payload = self.location(location_id, params=params)
+        #elif bbox:
+            #payload = self.area(bbox, params=params)
+        #else:
+            #raise ValueError("Provide bbox or location_id for an E-SOH query.")
+
+        #records = coveragejson_to_records(payload)
+        #self._attach_location_metadata(records, payload)
+        #return StationObservations(records)
+
     def observation_records(
         self,
         *,
@@ -89,12 +119,34 @@ class ESoHClient:
         bbox: tuple[float, float, float, float] | None = None,
         location_id: str | None = None,
         level: str | None = None,
+        height: float | None = None,
+        statistic: str | None = None,
+        period: str | None = None,
     ) -> StationObservations:
+
+        selectors = []
+
+        for parameter in parameters:
+            height_selector = "*" if height is None else str(height)
+            statistic_selector = "*" if statistic is None else statistic
+            period_selector = "*" if period is None else period
+
+            selectors.append(
+                f"{parameter}:"
+                f"{height_selector}:"
+                f"{statistic_selector}:"
+                f"{period_selector}"
+            )
+
         params: dict[str, Any] = {
-            "datetime": f"{start.astimezone(dt.timezone.utc).isoformat()}/{end.astimezone(dt.timezone.utc).isoformat()}",
-            "parameter-name": ",".join(f"{parameter}:*:*:*" for parameter in parameters),
+            "datetime": (
+                f"{start.astimezone(dt.timezone.utc).isoformat()}/"
+                f"{end.astimezone(dt.timezone.utc).isoformat()}"
+            ),
+            "parameter-name": ",".join(selectors),
             "f": "CoverageJSON",
         }
+
         if level:
             params["level"] = level
 
@@ -106,32 +158,115 @@ class ESoHClient:
             raise ValueError("Provide bbox or location_id for an E-SOH query.")
 
         records = coveragejson_to_records(payload)
+
+        self._normalise_records(records)
         self._attach_location_metadata(records, payload)
+
         return StationObservations(records)
+    
 
     @staticmethod
-    def _attach_location_metadata(records: list[dict[str, Any]], payload: dict[str, Any]) -> None:
+    def _normalise_records(records: list[dict[str, Any]]) -> None:
+        """Normalise E-SOH-specific missing values and parameter metadata."""
+
+        missing_values = {-32767.0, -32766.0}
+
+        for record in records:
+            value = record.get("value")
+
+            if isinstance(value, (int, float)):
+                value = float(value)
+
+                if value in missing_values or not math.isfinite(value):
+                    record["value"] = None
+
+            parameter = record.get("parameter")
+
+            if isinstance(parameter, str):
+                parts = parameter.split(":")
+
+                if len(parts) == 4:
+                    variable, height, statistic, period = parts
+
+                    record["variable"] = variable
+
+                    try:
+                        record["height_m"] = float(height)
+                    except ValueError:
+                        record["height_m"] = None
+
+                    record["statistic"] = statistic
+                    record["period"] = period
+       
+
+    @staticmethod
+    def _attach_location_metadata(
+        records: list[dict[str, Any]],
+        payload: dict[str, Any],
+    ) -> None:
         """Attach common station metadata when present in EDR output."""
 
         properties = payload.get("properties", {})
+
         if isinstance(properties, dict):
             for record in records:
-                for key in ("station_name", "location_id", "wigos_id", "name"):
+                for key in (
+                    "station_name",
+                    "location_id",
+                    "wigos_id",
+                    "name",
+                ):
                     if key in properties and key not in record:
                         record[key] = properties[key]
 
-        # CoverageJSON may provide location metadata through the domain
-        # referencing object rather than top-level properties. Preserve the
-        # metadata where it is easily identifiable without imposing one schema.
         refs = payload.get("domain", {}).get("referencing", [])
+
         if isinstance(refs, list):
             for ref in refs:
                 if not isinstance(ref, dict):
                     continue
+
                 system = ref.get("system", {})
-                if system.get("type") == "GeographicCRS" and ref.get("coordinates"):
-                    coordinates = ref.get("coordinates")
+
+                if (
+                    system.get("type") == "GeographicCRS"
+                    and ref.get("coordinates")
+                ):
+                    coordinates = ref["coordinates"]
+
                     if len(coordinates) >= 2:
                         for record in records:
-                            record.setdefault("longitude", coordinates[0])
-                            record.setdefault("latitude", coordinates[1])
+                            record.setdefault(
+                                "longitude",
+                                coordinates[0],
+                            )
+                            record.setdefault(
+                                "latitude",
+                                coordinates[1],
+                            )
+    #@staticmethod
+    #def _attach_location_metadata(records: list[dict[str, Any]], payload: dict[str, Any]) -> None:
+     #   """Attach common station metadata when present in EDR output."""
+
+      #  properties = payload.get("properties", {})
+       # if isinstance(properties, dict):
+        #    for record in records:
+         #       for key in ("station_name", "location_id", "wigos_id", "name"):
+          #          if key in properties and key not in record:
+           #             record[key] = properties[key]
+
+        ## CoverageJSON may provide location metadata through the domain
+        ## referencing object rather than top-level properties. Preserve the
+        ## metadata where it is easily identifiable without imposing one schema.
+        #refs = payload.get("domain", {}).get("referencing", [])
+        #if isinstance(refs, list):
+         #   for ref in refs:
+          #      if not isinstance(ref, dict):
+           #         continue
+            #    system = ref.get("system", {})
+             #   if system.get("type") == "GeographicCRS" and ref.get("coordinates"):
+              #      coordinates = ref.get("coordinates")
+               #     if len(coordinates) >= 2:
+                #        for record in records:
+                 #           record.setdefault("longitude", coordinates[0])
+                  #          record.setdefault("latitude", coordinates[1])
