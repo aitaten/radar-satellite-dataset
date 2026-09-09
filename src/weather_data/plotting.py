@@ -61,7 +61,19 @@ def plot_raster(
 
     fig = plt.figure(figsize=config.figsize)
     ax = fig.add_subplot(1, 1, 1, projection=field.crs)
-    mesh = ax.pcolormesh(field.x, field.y, field.data, cmap=cmap, norm=norm, shading="auto")
+    #mesh = ax.pcolormesh(field.x, field.y, field.data, cmap=cmap, norm=norm, shading="auto")
+    mesh = ax.pcolormesh(
+        field.x,
+        field.y,
+        field.data,
+        cmap=cmap,
+        norm=norm,
+        shading="auto",
+        transform=field.crs,
+    )
+
+    ax.set_xlim(np.nanmin(field.x), np.nanmax(field.x))
+    ax.set_ylim(np.nanmin(field.y), np.nanmax(field.y))
     add_map_features(ax, config)
     extend = "max" if field.quantity == "RATE" else "neither"
     cbar = fig.colorbar(mesh, ax=ax, pad=0.02, shrink=0.85, extend=extend)
@@ -205,7 +217,12 @@ def plot_station_observations(
     the meteorological convention: direction *from* which the wind originates.
     """
 
-    rows = [dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None]
+    #rows = [dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None]
+    #rows = [ dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None and np.isfinite(float(r["value"])) and float(r["value"]) != -32767.0]
+    rows = [dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None ]
+
+    # E-SOH utiliza al menos -32767 y -32766 como valores inválidos.
+    rows = [ r for r in rows if np.isfinite(float(r["value"])) and float(r["value"]) > -1000]
     if not rows:
         raise ValueError("No plottable station records found.")
 
@@ -216,7 +233,12 @@ def plot_station_observations(
 
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(1, 1, 1, projection=projection)
-    values = np.asarray([float(r["value"]) for r in rows])
+    ax.set_extent(
+        [-12.0, 32.0, 34.0, 72.0], crs=ccrs.PlateCarree(), )
+    # values = np.asarray([float(r["value"]) for r in rows])
+    values = np.asarray([float(r["value"]) for r in rows],
+    dtype=float, )
+    print( "Plotting:", len(rows),"records | min:", np.nanmin(values), "| max:", np.nanmax(values),)
     # Precipitation uses the same classification as the raster plots.
     is_precipitation = value_label.lower() in {"precipitation", "precipitation_amount", "precipitation_rate", "rate"}
 
@@ -274,10 +296,12 @@ def plot_station_observations(
             [r["longitude"] for r in rows],
             [r["latitude"] for r in rows],
             c=values,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            s=35,
+            cmap="coolwarm",
+            vmin=-30,
+            vmax=40,
+            s=20,
+            edgecolors="black",
+            linewidths=0.15,
             transform=transform,
             zorder=3,
         )
@@ -308,6 +332,7 @@ def plot_station_observations(
             ax.quiver(qx, qy, u, v, transform=transform, scale=300, width=0.002, zorder=4)
 
     ax.set_title(title)
-    fig.savefig(output, dpi=200, bbox_inches="tight")
+    #fig.savefig(output, dpi=200, bbox_inches="tight")
+    fig.savefig(output, dpi=200)
     plt.close(fig)
     return output
