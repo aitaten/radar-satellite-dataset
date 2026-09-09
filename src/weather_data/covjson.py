@@ -29,13 +29,29 @@ def coveragejson_to_records(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
 
     # E-SOH area queries return a CoverageCollection.
     coverages = payload.get("coverages")
+    #if coverages is not None:
+     #   observations: list[dict[str, Any]] = []
+      #  for coverage in coverages:
+       #     if isinstance(coverage, Mapping):
+        #        observations.extend(coveragejson_to_records(coverage))
+        #return observations
     if coverages is not None:
         observations: list[dict[str, Any]] = []
-        for coverage in coverages:
-            if isinstance(coverage, Mapping):
-                observations.extend(coveragejson_to_records(coverage))
-        return observations
 
+        for coverage in coverages:
+            if not isinstance(coverage, Mapping):
+                continue
+
+            records = coveragejson_to_records(coverage)
+            wigos_id = coverage.get("metocean:wigosId")
+            for record in records:
+                if wigos_id is not None:
+                    record["wigos_id"] = wigos_id
+
+            observations.extend(records)
+
+        return observations
+    
     domain = payload.get("domain", {})
     axes = domain.get("axes", {})
     ranges = payload.get("ranges", {})

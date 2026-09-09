@@ -61,7 +61,19 @@ def plot_raster(
 
     fig = plt.figure(figsize=config.figsize)
     ax = fig.add_subplot(1, 1, 1, projection=field.crs)
-    mesh = ax.pcolormesh(field.x, field.y, field.data, cmap=cmap, norm=norm, shading="auto")
+    #mesh = ax.pcolormesh(field.x, field.y, field.data, cmap=cmap, norm=norm, shading="auto")
+    mesh = ax.pcolormesh(
+        field.x,
+        field.y,
+        field.data,
+        cmap=cmap,
+        norm=norm,
+        shading="auto",
+        transform=field.crs,
+    )
+
+    ax.set_xlim(np.nanmin(field.x), np.nanmax(field.x))
+    ax.set_ylim(np.nanmin(field.y), np.nanmax(field.y))
     add_map_features(ax, config)
     extend = "max" if field.quantity == "RATE" else "neither"
     cbar = fig.colorbar(mesh, ax=ax, pad=0.02, shrink=0.85, extend=extend)
@@ -72,32 +84,119 @@ def plot_raster(
     return output
 
 
+#def plot_raster_comparison(
+ #   fields: Sequence[RasterField],
+  #  titles: Sequence[str],
+   # output_path: str | Path,
+   # *,
+   # suptitle: str,
+   # config: MapConfig = MapConfig(figsize=(20.0, 8.0)),
+#) -> Path:
+ #   if len(fields) != len(titles):
+  #      raise ValueError("fields and titles must have the same length")
+   # output = Path(output_path)
+   # output.parent.mkdir(parents=True, exist_ok=True)
+   # fig = plt.figure(figsize=config.figsize)
+   # gs = fig.add_gridspec(1, len(fields), wspace=0.02)
+   # for i, (field, title) in enumerate(zip(fields, titles)):
+   #     print(f"\nFIELD {i}: {title}")
+   #     print("shape:", field.data.shape)
+   #     print("x:", field.x[0], field.x[-1], "range:", np.ptp(field.x))
+   #     print("y:", field.y[0], field.y[-1], "range:", np.ptp(field.y))
+   #     print("crs:", field.crs)
+
+    #    norm, cmap = _raster_style(field.quantity)
+    #    ax = fig.add_subplot(gs[0, i], projection=field.crs)
+    #    mesh = ax.pcolormesh(field.x, field.y, field.data, cmap=cmap, norm=norm, shading="auto")
+    #    add_map_features(ax, config)
+    #    fig.colorbar(mesh, ax=ax, label=field.unit, pad=0.02, shrink=0.8, extend="min")
+    #    ax.set_title(title)
+    #fig.suptitle(suptitle, fontsize=16)
+    #fig.savefig(output, dpi=200, bbox_inches="tight")
+    #plt.close(fig)
+    #return output
+
 def plot_raster_comparison(
-    fields: Sequence[RasterField],
-    titles: Sequence[str],
-    output_path: str | Path,
+    fields,
+    titles,
+    output_path,
     *,
-    suptitle: str,
-    config: MapConfig = MapConfig(figsize=(20.0, 8.0)),
-) -> Path:
+    suptitle="Raster comparison",
+    config=MapConfig(figsize=(16.0, 7.5)),
+):
+    from pathlib import Path
+    import numpy as np
+    import matplotlib.pyplot as plt
+
     if len(fields) != len(titles):
         raise ValueError("fields and titles must have the same length")
+
+    if not fields:
+        raise ValueError("fields must not be empty")
+
+    first_quantity = fields[0].quantity
+    first_unit = fields[0].unit
+
+    for field in fields[1:]:
+        if field.quantity != first_quantity:
+            raise ValueError(
+                "All fields must have the same quantity for comparison plots"
+            )
+        if field.unit != first_unit:
+            raise ValueError(
+                "All fields must have the same unit for comparison plots"
+            )
+
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig = plt.figure(figsize=config.figsize)
-    gs = fig.add_gridspec(1, len(fields), wspace=0.02)
-    for i, (field, title) in enumerate(zip(fields, titles)):
-        norm, cmap = _raster_style(field.quantity)
-        ax = fig.add_subplot(gs[0, i], projection=field.crs)
-        mesh = ax.pcolormesh(field.x, field.y, field.data, cmap=cmap, norm=norm, shading="auto")
-        add_map_features(ax, config)
-        fig.colorbar(mesh, ax=ax, label=field.unit, pad=0.02, shrink=0.8, extend="min")
-        ax.set_title(title)
-    fig.suptitle(suptitle, fontsize=16)
-    fig.savefig(output, dpi=200, bbox_inches="tight")
-    plt.close(fig)
-    return output
 
+    norm, cmap = _raster_style(first_quantity)
+
+    fig = plt.figure(figsize=config.figsize)
+    gs = fig.add_gridspec(
+        1,
+        3,
+        width_ratios=[1, 1, 0.045],
+        wspace=0.08,
+    )
+
+    meshes = []
+
+    for i, (field, title) in enumerate(zip(fields, titles)):
+        ax = fig.add_subplot(gs[0, i], projection=field.crs)
+
+        mesh = ax.pcolormesh(
+            field.x,
+            field.y,
+            field.data,
+            cmap=cmap,
+            norm=norm,
+            shading="auto",
+            transform=field.crs,
+        )
+
+        ax.set_xlim(np.nanmin(field.x), np.nanmax(field.x))
+        ax.set_ylim(np.nanmin(field.y), np.nanmax(field.y))
+
+        add_map_features(ax, config)
+        ax.set_title(title, fontsize=12, pad=8)
+
+        meshes.append(mesh)
+
+    cax = fig.add_subplot(gs[0, 2])
+    cbar = fig.colorbar(meshes[-1], cax=cax, extend="max")
+    cbar.set_label(first_unit, fontsize=11)
+
+    fig.suptitle(suptitle, fontsize=18, y=0.98)
+
+    fig.savefig(
+        output,
+        dpi=200,
+        bbox_inches="tight",
+    )
+    plt.close(fig)
+
+    return output
 
 def plot_station_observations(
     records: Iterable[Mapping],
@@ -118,7 +217,12 @@ def plot_station_observations(
     the meteorological convention: direction *from* which the wind originates.
     """
 
-    rows = [dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None]
+    #rows = [dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None]
+    #rows = [ dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None and np.isfinite(float(r["value"])) and float(r["value"]) != -32767.0]
+    rows = [dict(r) for r in records if r.get("latitude") is not None and r.get("longitude") is not None and r.get("value") is not None ]
+
+    # E-SOH utiliza al menos -32767 y -32766 como valores inválidos.
+    rows = [ r for r in rows if np.isfinite(float(r["value"])) and float(r["value"]) > -1000]
     if not rows:
         raise ValueError("No plottable station records found.")
 
@@ -129,7 +233,12 @@ def plot_station_observations(
 
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(1, 1, 1, projection=projection)
-    values = np.asarray([float(r["value"]) for r in rows])
+    ax.set_extent(
+        [-12.0, 32.0, 34.0, 72.0], crs=ccrs.PlateCarree(), )
+    # values = np.asarray([float(r["value"]) for r in rows])
+    values = np.asarray([float(r["value"]) for r in rows],
+    dtype=float, )
+    print( "Plotting:", len(rows),"records | min:", np.nanmin(values), "| max:", np.nanmax(values),)
     # Precipitation uses the same classification as the raster plots.
     is_precipitation = value_label.lower() in {"precipitation", "precipitation_amount", "precipitation_rate", "rate"}
 
@@ -187,10 +296,12 @@ def plot_station_observations(
             [r["longitude"] for r in rows],
             [r["latitude"] for r in rows],
             c=values,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            s=35,
+            cmap="coolwarm",
+            vmin=-30,
+            vmax=40,
+            s=20,
+            edgecolors="black",
+            linewidths=0.15,
             transform=transform,
             zorder=3,
         )
@@ -221,6 +332,7 @@ def plot_station_observations(
             ax.quiver(qx, qy, u, v, transform=transform, scale=300, width=0.002, zorder=4)
 
     ax.set_title(title)
-    fig.savefig(output, dpi=200, bbox_inches="tight")
+    #fig.savefig(output, dpi=200, bbox_inches="tight")
+    fig.savefig(output, dpi=200)
     plt.close(fig)
     return output

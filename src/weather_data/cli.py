@@ -71,6 +71,25 @@ def plot_esoh() -> None:
     parser.add_argument("--end", type=parse_utc_datetime, default=None, help="End time in ISO format")
     parser.add_argument("--bbox", nargs=4, type=float, default=ESoHQueryConfig().bbox, metavar=("W", "S", "E", "N"))
     parser.add_argument("--output", default=None)
+    parser.add_argument(
+        "--height",
+        type=float,
+        default=None,
+        help="Observation height in metres",
+    )
+
+    parser.add_argument(
+        "--statistic",
+        default=None,
+        help="Observation statistic, e.g. point, mean, maximum, sum",
+    )
+
+    parser.add_argument(
+        "--period",
+        default=None,
+        help="Observation period in ISO-8601 duration format, e.g. PT0S, PT10M, PT1H",
+    )
+
     args = parser.parse_args()
 
     # --- Robust Date Resolution ---
@@ -94,7 +113,8 @@ def plot_esoh() -> None:
     directories = DirectoryConfig()
     directories.ensure()
     
-    observations = ESoHClient().observation_records(start=start, end=end, parameters=[args.parameter], bbox=tuple(args.bbox))
+    #observations = ESoHClient().observation_records(start=start, end=end, parameters=[args.parameter], bbox=tuple(args.bbox))
+    observations = ESoHClient().observation_records( start=start, end=end, parameters=[args.parameter], bbox=tuple(args.bbox), height=args.height, statistic=args.statistic, period=args.period,)
     output = Path(args.output) if args.output else directories.output / f"esoh_{args.parameter}.png"
     plot_station_observations(observations.as_records(), output, title=f"E-SOH | {args.parameter} | {end:%Y-%m-%d %H:%M UTC}", value_label=args.parameter)
     print(f"Saved: {output}")
